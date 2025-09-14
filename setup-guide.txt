@@ -1,0 +1,171 @@
+================================================================
+AUDIO PROCESSING WITH LOCAL SLM - COMPLETE SETUP GUIDE
+================================================================
+
+PREREQUISITES:
+- macOS (Intel or Apple Silicon)
+- Node.js 18+ installed
+- At least 5GB free disk space
+
+================================================================
+STEP 1: INSTALL HOMEBREW (if not installed)
+================================================================
+
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+================================================================
+STEP 2: INSTALL SYSTEM DEPENDENCIES
+================================================================
+
+# Install FFmpeg for audio conversion
+brew install ffmpeg
+
+# Install CMake (optional, for building whisper.cpp)
+brew install cmake
+
+# Install Git if needed
+brew install git
+
+================================================================
+STEP 3: SETUP WHISPER.CPP FOR TRANSCRIPTION
+================================================================
+
+# Clone and build whisper.cpp
+git clone https://github.com/ggerganov/whisper.cpp.git
+cd whisper.cpp
+make clean
+make -j
+
+# Download the tiny.en model (39MB)
+cd models
+bash download-ggml-model.sh tiny.en
+cd ../..
+
+# Test whisper installation
+echo "test" > test.txt
+./whisper.cpp/build/bin/whisper-cli -m ./whisper.cpp/models/ggml-tiny.en.bin -f test.txt
+rm test.txt
+
+================================================================
+STEP 4: INSTALL OLLAMA FOR LOCAL LLM
+================================================================
+
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Start Ollama service (run in separate terminal)
+ollama serve
+
+# In a new terminal, pull the fast model (394MB)
+ollama pull qwen2.5:0.5b
+
+# Alternative models (if qwen doesn't work):
+# ollama pull tinyllama:latest     # 637MB
+# ollama pull llama3.2:1b          # 1.3GB
+
+# Test Ollama
+curl http://localhost:11434/api/generate -d '{"model":"qwen2.5:0.5b","prompt":"Hello","stream":false,"options":{"num_predict":5}}'
+
+================================================================
+STEP 5: INSTALL NODE.JS DEPENDENCIES
+================================================================
+
+# In your project directory
+npm install
+
+# If you get UUID errors, also run:
+npm install uuid --save
+
+================================================================
+STEP 6: CREATE REQUIRED DIRECTORIES
+================================================================
+
+# Create temp directory for audio processing
+mkdir -p temp
+
+================================================================
+STEP 7: SETUP ENVIRONMENT
+================================================================
+
+# Add to your .bashrc or .zshrc:
+echo 'export NODE_ENV=development' >> ~/.zshrc
+source ~/.zshrc
+
+================================================================
+STEP 8: TEST AUDIO RECORDING (Optional)
+================================================================
+
+# Create a test audio file
+say "Hello, this is a test of the whisper transcription system" -o test.aiff
+afconvert -f WAVE -d LEI16@16000 test.aiff test.wav
+
+# Test the full pipeline
+./whisper.cpp/build/bin/whisper-cli -m ./whisper.cpp/models/ggml-tiny.en.bin -f test.wav -t 8 -l en
+
+================================================================
+STEP 9: RUN THE APPLICATION
+================================================================
+
+# Make sure Ollama is running in another terminal:
+# ollama serve
+
+# Build and run the Electron app
+npm run electron:dev
+
+# Or if you have separate build/run commands:
+npm run build
+npm run electron
+
+================================================================
+TROUBLESHOOTING
+================================================================
+
+1. If whisper-cli not found:
+   - Check: ls -la ./whisper.cpp/build/bin/
+   - Should see whisper-cli listed
+   - If not, rebuild: cd whisper.cpp && make clean && make
+
+2. If Ollama not responding:
+   - Check if running: curl http://localhost:11434/api/tags
+   - If not, start it: ollama serve
+   - Make sure model is downloaded: ollama list
+
+3. If audio too quiet:
+   - The code includes 3x volume boost
+   - Check microphone permissions in System Preferences
+
+4. If node modules errors:
+   - Delete and reinstall: rm -rf node_modules && npm install
+
+5. If disk space issues:
+   - Clear Homebrew cache: brew cleanup -s
+   - Clear npm cache: npm cache clean --force
+   - Remove old temp files: rm -rf temp/*
+
+================================================================
+PERFORMANCE EXPECTATIONS
+================================================================
+
+- Audio transcription: ~900ms (whisper tiny.en)
+- LLM response: ~300-500ms (qwen2.5:0.5b)
+- Total pipeline: ~1.2-1.5 seconds
+
+================================================================
+MODELS DISK USAGE
+================================================================
+
+- whisper tiny.en: 39MB
+- qwen2.5:0.5b: 394MB
+- Total: ~450MB
+
+================================================================
+KEEPING MODELS WARM (Optional - for faster response)
+================================================================
+
+# Run this in background to keep model loaded:
+while true; do
+  curl -s http://localhost:11434/api/generate -d '{"model":"qwen2.5:0.5b","prompt":"","keep_alive":3600}' > /dev/null
+  sleep 300
+done
+
+================================================================
