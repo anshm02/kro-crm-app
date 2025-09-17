@@ -7,6 +7,12 @@ interface QueueCommandsProps {
   onChatToggle: () => void
 }
 
+interface TranscriptEntry {
+  type: 'question' | 'answer' | 'live'
+  text: string
+  timestamp: string
+}
+
 const QueueCommands: React.FC<QueueCommandsProps> = ({
   onTooltipVisibilityChange,
   screenshots,
@@ -24,8 +30,11 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   }
 
   const [audioResults, setAudioResults] = useState<string[]>([])
+  const [transcript, setTranscript] = useState<TranscriptEntry[]>([])
+  const [liveTranscription, setLiveTranscription] = useState<string>("")
   const [currentVolume, setCurrentVolume] = useState(0)
   const chunks = useRef<Blob[]>([])
+  const transcriptEndRef = useRef<HTMLDivElement>(null)
 
   // Audio/VAD refs
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -47,6 +56,11 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   const CALIBRATION_MS = 800
   const MIN_THRESHOLD_RMS = 0.002
   const NOISE_MULTIPLIER = 2.0
+
+  // Auto-scroll to bottom when new entries are added
+  useEffect(() => {
+    transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [transcript, liveTranscription])
 
   useEffect(() => {
     let tooltipHeight = 0
@@ -72,6 +86,33 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
     return Math.max(0, Math.min(10, Math.round(t * 10)))
   }
 
+  // Simulate live transcription (you'd replace this with actual real-time transcription)
+  const simulateLiveTranscription = (text: string) => {
+    const words = text.split(' ')
+    let currentIndex = 0
+    
+    const interval = setInterval(() => {
+      if (currentIndex < words.length) {
+        setLiveTranscription(prev => prev + (prev ? ' ' : '') + words[currentIndex])
+        currentIndex++
+      } else {
+        clearInterval(interval)
+        // Convert live transcription to final entry
+        const timestamp = new Date().toLocaleTimeString('en-US', { 
+          hour: 'numeric', 
+          minute: '2-digit',
+          hour12: true 
+        })
+        setTranscript(prev => [...prev, {
+          type: 'answer',
+          text: liveTranscription + ' ' + words.join(' ').substring(liveTranscription.length).trim(),
+          timestamp
+        }])
+        setLiveTranscription("")
+      }
+    }, 100) // Simulate word-by-word appearance
+  }
+
   const sendAudioForAnalysis = async () => {
     if (chunks.current.length === 0) return
     const audioBlob = new Blob(chunks.current, { type: "audio/webm" })
@@ -87,6 +128,9 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
         )
         if (result?.text && result.text.trim()) {
           setAudioResults(prev => [...prev, result.text])
+          
+          // Add to transcript as an answer and simulate live transcription
+          simulateLiveTranscription(result.text)
         }
       } catch (err) {
         console.error("[VAD] Analysis failed:", err)
@@ -124,6 +168,11 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
       if (rms > threshold) {
         isSpeakingRef.current = true
         silenceStartRef.current = null
+        
+        // Show live indicator when speaking
+        if (!liveTranscription) {
+          setLiveTranscription("🎤 Listening...")
+        }
       } else {
         if (isSpeakingRef.current) {
           if (silenceStartRef.current == null) {
@@ -261,12 +310,15 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
     stopInFlightRef.current = false
     isSpeakingRef.current = false
     silenceStartRef.current = null
+    setLiveTranscription("")
   }
 
   const handleRecordClick = async () => {
     if (!isRecording) {
       setIsRecording(true)
       setAudioResults([])
+      setTranscript([])
+      setLiveTranscription("")
       await startRecording()
     } else {
       setIsRecording(false)
@@ -343,9 +395,9 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
             type="button"
           >
             {isRecording ? (
-              <span className="animate-pulse">● Stop VAD</span>
+              <span className="animate-pulse">Stop Recording</span>
             ) : (
-              <span>🎤 Start VAD</span>
+              <span> Start Recording </span>
             )}
           </button>
           {isRecording && (
@@ -354,7 +406,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
               onClick={handleManualFlush}
               type="button"
             >
-              ⏸ Flush Segment
+              Get Response
             </button>
           )}
         </div>
@@ -380,7 +432,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
               <div className="p-3 text-xs bg-black/80 rounded-lg text-white/90">
                 <h3 className="font-medium truncate">Keyboard Shortcuts</h3>
                 <p className="text-[10px] text-white/70">
-                  VAD auto-sends after 1.5s silence. “Flush Segment” manually sends the current audio and immediately restarts recording.
+                  VAD auto-sends after 1.5s silence. "Flush Segment" manually sends the current audio and immediately restarts recording.
                 </p>
               </div>
             </div>
@@ -395,14 +447,81 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
           <IoLogOutOutline className="w-4 h-4" />
         </button>
       </div>
-      {audioResults.length > 0 && (
-        <div className="mt-2 p-2 bg-white/10 rounded text-white text-xs max-w-md max-h-40 overflow-y-auto">
-          <span className="font-semibold block mb-1">Audio Results:</span>
-          {audioResults.map((result, index) => (
-            <div key={index} className="mb-1 pb-1 border-b border-white/20 last:border-0">
-              <span className="text-white/60">Segment {index + 1}:</span> {result}
+      
+      {/* Q&A Style Transcript Display */}
+      {(transcript.length > 0 || liveTranscription || audioResults.length > 0) && (
+        <div className="mt-3 mx-auto" style={{ maxWidth: '600px' }}>
+          <div className="bg-gradient-to-b from-gray-900/95 to-gray-800/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/10 overflow-hidden">
+            <div className="px-6 py-4 border-b border-white/10">
+              <h3 className="text-sm font-semibold text-white/90 flex items-center gap-2">
+                {isRecording && (
+                  <span className="inline-flex w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                )}
+                Live Interview Transcript
+              </h3>
             </div>
-          ))}
+            
+            <div className="px-6 py-4 max-h-96 overflow-y-auto space-y-4">
+              {transcript.map((entry, index) => (
+                <div key={index} className="space-y-2">
+                  {entry.type === 'question' ? (
+                    <div className="flex gap-3">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
+                        <span className="text-xs">Q</span>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm text-white/80">{entry.text}</p>
+                        <span className="text-[10px] text-white/40 mt-1">{entry.timestamp}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex gap-3">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center">
+                        <span className="text-xs">A</span>
+                      </div>
+                      <div className="flex-1">
+                        <div className="bg-gradient-to-r from-orange-500/20 to-orange-400/10 rounded-lg p-3 border border-orange-400/20">
+                          <p className="text-sm text-orange-200">{entry.text}</p>
+                        </div>
+                        <span className="text-[10px] text-white/40 mt-1 inline-block">{entry.timestamp}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              
+              {/* Live Transcription Display */}
+              {liveTranscription && (
+                <div className="flex gap-3">
+                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center animate-pulse">
+                    <span className="text-xs">A</span>
+                  </div>
+                  <div className="flex-1">
+                    <div className="bg-gradient-to-r from-orange-500/20 to-orange-400/10 rounded-lg p-3 border border-orange-400/20">
+                      <p className="text-sm text-orange-200 animate-pulse">{liveTranscription}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Legacy audio results (hidden but preserved for compatibility) */}
+              {audioResults.map((result, index) => (
+                <div key={`audio-${index}`} className="hidden">
+                  {result}
+                </div>
+              ))}
+              
+              <div ref={transcriptEndRef} />
+            </div>
+            
+            {isRecording && (
+              <div className="px-6 py-3 border-t border-white/10 bg-black/20">
+                <p className="text-[11px] text-white/50 text-center">
+                  Speak clearly and pause naturally between responses...
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
