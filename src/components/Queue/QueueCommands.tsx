@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from "react"
 import { IoLogOutOutline } from "react-icons/io5"
+import { FiHeadphones, FiPower, FiMic, FiSend, FiMessageSquare, FiSettings } from "react-icons/fi"
+import { BsRecordCircle, BsStopCircle, BsPauseFill, BsPlayFill } from "react-icons/bs"
+import { AiOutlineClose } from "react-icons/ai"
 
 interface QueueCommandsProps {
   onTooltipVisibilityChange: (visible: boolean, height: number) => void
@@ -8,7 +11,7 @@ interface QueueCommandsProps {
 }
 
 interface TranscriptEntry {
-  type: 'question' | 'answer' | 'live'
+  type: 'question' | 'answer' | 'live' | 'interviewer' | 'system'
   text: string
   timestamp: string
 }
@@ -33,6 +36,8 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([])
   const [liveTranscription, setLiveTranscription] = useState<string>("")
   const [currentVolume, setCurrentVolume] = useState(0)
+  const [messageInput, setMessageInput] = useState("")
+  const [showChat, setShowChat] = useState(false)
   const chunks = useRef<Blob[]>([])
   const transcriptEndRef = useRef<HTMLDivElement>(null)
 
@@ -340,6 +345,26 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
     }
   }
 
+  const handleSendMessage = () => {
+    if (messageInput.trim()) {
+      const timestamp = new Date().toLocaleTimeString('en-US', { 
+        hour: 'numeric', 
+        minute: '2-digit',
+        hour12: true 
+      })
+      setTranscript(prev => [...prev, {
+        type: 'question',
+        text: messageInput,
+        timestamp
+      }])
+      setMessageInput("")
+      // Simulate a response
+      setTimeout(() => {
+        simulateLiveTranscription("I understand your message. Let me help you with that.")
+      }, 1000)
+    }
+  }
+
   useEffect(() => {
     return () => {
       if (isRecording) stopRecording()
@@ -348,20 +373,19 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   }, [])
 
   const VolumeMeter = () => (
-    <div className="flex items-center gap-1 mx-3">
-      <span className="text-[10px] text-white/50">Vol:</span>
+    <div className="flex items-center gap-1">
       <div className="flex gap-0.5">
         {[...Array(10)].map((_, i) => (
           <div
             key={i}
-            className={`w-1 h-3 rounded-sm transition-colors ${
+            className={`w-0.5 h-3 rounded-full transition-all duration-75 ${
               i < currentVolume
                 ? i < 3
                   ? "bg-green-400"
                   : i < 7
                   ? "bg-yellow-400"
                   : "bg-red-400"
-                : "bg-white/20"
+                : "bg-gray-600"
             }`}
           />
         ))}
@@ -370,160 +394,235 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   )
 
   return (
-    <div className="w-fit">
-      <div className="text-xs text-white/90 liquid-glass-bar py-1 px-4 flex items-center justify-center gap-4 draggable-area">
-        {screenshots.length > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] leading-none">Solve</span>
-            <div className="flex gap-1">
-              <button className="bg-white/10 hover:bg-white/20 rounded-md px-1.5 py-1 text-[11px] text-white/70">
-                ⌘
-              </button>
-              <button className="bg-white/10 hover:bg-white/20 rounded-md px-1.5 py-1 text-[11px] text-white/70">
-                ↵
-              </button>
+    <div className="w-full h-screen bg-gradient-to-br from-gray-900/30 via-black/30 to-gray-900/30 flex flex-col">
+      {/* Top Bar - Draggable Area */}
+      <div className="bg-black/20 backdrop-blur-2xl border-b border-gray-800/30 px-4 py-2 draggable-area">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* Mac-style window controls */}
+            <div className="flex gap-2 no-drag">
+              <div className="w-3 h-3 rounded-full bg-red-500/80 hover:bg-red-600 cursor-pointer" onClick={() => window.electronAPI.quitApp()} />
+              <div className="w-3 h-3 rounded-full bg-yellow-500/80 hover:bg-yellow-600 cursor-pointer" />
+              <div className="w-3 h-3 rounded-full bg-green-500/80 hover:bg-green-600 cursor-pointer" />
             </div>
+            <div className="text-gray-400/90 text-sm font-medium">AI Interview Assistant</div>
           </div>
-        )}
-        {isRecording && <VolumeMeter />}
-        <div className="flex items-center gap-2">
-          <button
-            className={`bg-white/10 hover:bg-white/20 rounded-md px-2 py-1 text-[11px] text-white/70 flex items-center gap-1 ${
-              isRecording ? "bg-red-500/70 hover:bg-red-500/90" : ""
-            }`}
-            onClick={handleRecordClick}
-            type="button"
-          >
-            {isRecording ? (
-              <span className="animate-pulse">Stop Recording</span>
-            ) : (
-              <span> Start Recording </span>
-            )}
-          </button>
-          {isRecording && (
-            <button
-              className="bg-blue-500/70 hover:bg-blue-500/90 rounded-md px-2 py-1 text-[11px] text-white/70"
-              onClick={handleManualFlush}
-              type="button"
-            >
-              Get Response
+
+          <div className="flex items-center gap-4">
+            {/* Control buttons - make them non-draggable */}
+            <button className="text-gray-400/80 hover:text-white transition-colors p-2 no-drag">
+              <FiHeadphones className="w-4 h-4" />
             </button>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            className="bg-white/10 hover:bg-white/20 rounded-md px-2 py-1 text-[11px] text-white/70 flex items-center gap-1"
-            onClick={onChatToggle}
-            type="button"
-          >
-            💬 Chat
-          </button>
-        </div>
-        <div
-          className="relative inline-block"
-          onMouseEnter={handleMouseEnter}
-          onMouseLeave={handleMouseLeave}
-        >
-          <div className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center cursor-help">
-            <span className="text-xs text-white/70">?</span>
+            <button 
+              className="text-gray-400/80 hover:text-white transition-colors p-2 no-drag"
+              onClick={() => setShowChat(!showChat)}
+            >
+              <FiMessageSquare className="w-4 h-4" />
+            </button>
+            <button className="text-gray-400/80 hover:text-white transition-colors p-2 no-drag">
+              <FiSettings className="w-4 h-4" />
+            </button>
+            <div className="w-px h-6 bg-gray-700/50" />
+            <button
+              className="text-red-400/80 hover:text-red-500 transition-colors p-2 no-drag"
+              title="Sign Out"
+              onClick={() => window.electronAPI.quitApp()}
+            >
+              <FiPower className="w-4 h-4" />
+            </button>
           </div>
-          {isTooltipVisible && (
-            <div ref={tooltipRef} className="absolute top-full right-0 mt-2 w-80">
-              <div className="p-3 text-xs bg-black/80 rounded-lg text-white/90">
-                <h3 className="font-medium truncate">Keyboard Shortcuts</h3>
-                <p className="text-[10px] text-white/70">
-                  VAD auto-sends after 1.5s silence. "Flush Segment" manually sends the current audio and immediately restarts recording.
-                </p>
-              </div>
-            </div>
-          )}
         </div>
-        <div className="mx-2 h-4 w-px bg-white/20" />
-        <button
-          className="text-red-500/70 hover:text-red-500/90"
-          title="Sign Out"
-          onClick={() => window.electronAPI.quitApp()}
-        >
-          <IoLogOutOutline className="w-4 h-4" />
-        </button>
       </div>
-      
-      {/* Q&A Style Transcript Display */}
-      {(transcript.length > 0 || liveTranscription || audioResults.length > 0) && (
-        <div className="mt-3 mx-auto" style={{ maxWidth: '600px' }}>
-          <div className="bg-gradient-to-b from-gray-900/95 to-gray-800/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/10 overflow-hidden">
-            <div className="px-6 py-4 border-b border-white/10">
-              <h3 className="text-sm font-semibold text-white/90 flex items-center gap-2">
-                {isRecording && (
-                  <span className="inline-flex w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-                )}
-                Live Interview Transcript
-              </h3>
-            </div>
-            
-            <div className="px-6 py-4 max-h-96 overflow-y-auto space-y-4">
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Chat/Transcript Area */}
+        <div className="flex-1 flex flex-col bg-black/10 backdrop-blur-sm">
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="max-w-4xl mx-auto space-y-4">
+              {/* Sample initial messages */}
+              {transcript.length === 0 && !isRecording && (
+                <div className="text-center py-12">
+                  <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 mb-4">
+                    <FiMic className="w-8 h-8 text-white" />
+                  </div>
+                  <h2 className="text-2xl font-semibold text-white mb-2">Ready to Start</h2>
+                  <p className="text-gray-400">Click the record button to begin your interview session</p>
+                </div>
+              )}
+
+              {/* Transcript Messages */}
               {transcript.map((entry, index) => (
-                <div key={index} className="space-y-2">
-                  {entry.type === 'question' ? (
-                    <div className="flex gap-3">
-                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center">
-                        <span className="text-xs">Q</span>
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm text-white/80">{entry.text}</p>
-                        <span className="text-[10px] text-white/40 mt-1">{entry.timestamp}</span>
-                      </div>
+                <div key={index} className={`flex ${entry.type === 'question' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-2xl ${entry.type === 'question' ? 'order-2' : ''}`}>
+                    <div className={`rounded-2xl px-4 py-3 shadow-xl ${
+                      entry.type === 'question' 
+                        ? 'bg-gradient-to-r from-blue-600/70 to-blue-500/70 backdrop-blur-md text-white' 
+                        : entry.type === 'interviewer'
+                        ? 'bg-gradient-to-r from-purple-600/60 to-pink-600/60 backdrop-blur-md text-white'
+                        : 'bg-gray-800/30 backdrop-blur-md text-gray-200 border border-gray-700/50'
+                    }`}>
+                      <p className="text-sm leading-relaxed">{entry.text}</p>
                     </div>
-                  ) : (
-                    <div className="flex gap-3">
-                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center">
-                        <span className="text-xs">A</span>
-                      </div>
-                      <div className="flex-1">
-                        <div className="bg-gradient-to-r from-orange-500/20 to-orange-400/10 rounded-lg p-3 border border-orange-400/20">
-                          <p className="text-sm text-orange-200">{entry.text}</p>
-                        </div>
-                        <span className="text-[10px] text-white/40 mt-1 inline-block">{entry.timestamp}</span>
-                      </div>
+                    <div className="flex items-center gap-2 mt-1 px-2">
+                      <span className="text-[10px] text-gray-500">{entry.timestamp}</span>
                     </div>
-                  )}
+                  </div>
                 </div>
               ))}
-              
-              {/* Live Transcription Display */}
+
+              {/* Live Transcription */}
               {liveTranscription && (
-                <div className="flex gap-3">
-                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-orange-500/20 flex items-center justify-center animate-pulse">
-                    <span className="text-xs">A</span>
-                  </div>
-                  <div className="flex-1">
-                    <div className="bg-gradient-to-r from-orange-500/20 to-orange-400/10 rounded-lg p-3 border border-orange-400/20">
-                      <p className="text-sm text-orange-200 animate-pulse">{liveTranscription}</p>
+                <div className="flex justify-start">
+                  <div className="max-w-2xl">
+                    <div className="rounded-2xl px-4 py-3 bg-gradient-to-r from-orange-500/15 to-yellow-500/15 backdrop-blur-md text-orange-200 border border-orange-500/20 shadow-xl">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse" />
+                        <p className="text-sm leading-relaxed">{liveTranscription}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
               )}
-              
-              {/* Legacy audio results (hidden but preserved for compatibility) */}
-              {audioResults.map((result, index) => (
-                <div key={`audio-${index}`} className="hidden">
-                  {result}
-                </div>
-              ))}
-              
+
               <div ref={transcriptEndRef} />
             </div>
-            
-            {isRecording && (
-              <div className="px-6 py-3 border-t border-white/10 bg-black/20">
-                <p className="text-[11px] text-white/50 text-center">
-                  Speak clearly and pause naturally between responses...
-                </p>
+          </div>
+
+          {/* Input Area */}
+          <div className="border-t border-gray-800/30 bg-black/20 backdrop-blur-xl p-4">
+            <div className="max-w-4xl mx-auto">
+              <div className="flex items-center gap-3">
+                {/* Recording Controls */}
+                <button
+                  onClick={handleRecordClick}
+                  className={`p-3 rounded-full transition-all shadow-lg ${
+                    isRecording 
+                      ? 'bg-red-500/70 hover:bg-red-600/80 text-white animate-pulse backdrop-blur-md' 
+                      : 'bg-gray-800/40 hover:bg-gray-700/50 text-gray-300 backdrop-blur-md'
+                  }`}
+                >
+                  {isRecording ? <BsStopCircle className="w-5 h-5" /> : <BsRecordCircle className="w-5 h-5" />}
+                </button>
+
+                {isRecording && (
+                  <>
+                    <VolumeMeter />
+                    <button
+                      onClick={handleManualFlush}
+                      className="px-4 py-2 rounded-full bg-blue-600/70 hover:bg-blue-700/80 backdrop-blur-md text-white text-sm font-medium transition-all shadow-lg"
+                    >
+                      Send
+                    </button>
+                  </>
+                )}
+
+                {/* Text Input */}
+                <div className="flex-1 relative">
+                  <input
+                    type="text"
+                    value={messageInput}
+                    onChange={(e) => setMessageInput(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                    placeholder="Type your message..."
+                    className="w-full px-4 py-3 bg-gray-800/30 backdrop-blur-md border border-gray-700/50 rounded-full text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500/70 transition-colors shadow-inner"
+                  />
+                  <button
+                    onClick={handleSendMessage}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-gray-400 hover:text-blue-400 transition-colors"
+                  >
+                    <FiSend className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Additional Controls */}
+                <div className="flex items-center gap-2">
+                  <button className="p-2 text-gray-400 hover:text-white transition-colors">
+                    <FiHeadphones className="w-5 h-5" />
+                  </button>
+                  <button 
+                    onClick={onChatToggle}
+                    className="p-2 text-gray-400 hover:text-white transition-colors"
+                  >
+                    <FiMessageSquare className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
-            )}
+
+              {/* Recording Status */}
+              {isRecording && (
+                <div className="mt-3 flex items-center justify-center gap-2">
+                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                  <span className="text-xs text-gray-400">Recording... VAD will auto-send after 1.5s of silence</span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      )}
+
+        {/* Side Panel (when chat is shown) */}
+        {showChat && (
+          <div className="w-80 border-l border-gray-800/30 bg-black/20 backdrop-blur-2xl p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-semibold">Quick Actions</h3>
+              <button 
+                onClick={() => setShowChat(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                <AiOutlineClose className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="space-y-3">
+              {screenshots.length > 0 && (
+                <div className="p-3 bg-gray-800/30 backdrop-blur-md rounded-lg border border-gray-700/30">
+                  <p className="text-sm text-gray-400 mb-2">Screenshots: {screenshots.length}</p>
+                  <div className="flex gap-2">
+                    <button className="flex-1 px-3 py-1.5 bg-blue-600/60 hover:bg-blue-700/70 backdrop-blur-md rounded text-white text-xs">
+                      Analyze All
+                    </button>
+                    <button className="px-3 py-1.5 bg-gray-700/50 hover:bg-gray-600/60 backdrop-blur-md rounded text-white text-xs">
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="p-3 bg-gray-800/30 backdrop-blur-md rounded-lg border border-gray-700/30">
+                <p className="text-sm text-gray-400 mb-2">Session Stats</p>
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Messages:</span>
+                    <span className="text-gray-300">{transcript.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Duration:</span>
+                    <span className="text-gray-300">--:--</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 bg-gray-800/30 backdrop-blur-md rounded-lg border border-gray-700/30">
+                <p className="text-sm text-gray-400 mb-2">Keyboard Shortcuts</p>
+                <div className="space-y-1 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Start/Stop:</span>
+                    <span className="text-gray-300">Space</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Send:</span>
+                    <span className="text-gray-300">Enter</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Clear:</span>
+                    <span className="text-gray-300">Esc</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

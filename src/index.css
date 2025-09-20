@@ -165,3 +165,92 @@ button, input, select, textarea, .interactive {
   animation: shimmer 3s ease-in-out infinite;
   pointer-events: none;
 }
+
+/* Resize handles for frameless window */
+.resize-handle {
+  position: fixed; /* Use fixed instead of absolute for frameless windows */
+  -webkit-app-region: no-drag;
+  z-index: 99999;
+}
+
+/* Edge handles */
+.resize-handle-top {
+  top: 0;
+  left: 5px;
+  right: 5px;
+  height: 5px;
+  cursor: ns-resize;
+}
+
+.resize-handle-bottom {
+  bottom: 0;
+  left: 5px;
+  right: 5px;
+  height: 5px;
+  cursor: ns-resize;
+}
+
+.resize-handle-left {
+  top: 5px;
+  bottom: 5px;
+  left: 0;
+  width: 5px;
+  cursor: ew-resize;
+}
+
+.resize-handle-right {
+  top: 5px;
+  bottom: 5px;
+  right: 0;
+  width: 5px;
+  cursor: ew-resize;
+}
+
+/* Corner handles */
+.resize-handle-top-left {
+  top: 0;
+  left: 0;
+  width: 5px;
+  height: 5px;
+  cursor: nw-resize;
+  z-index: 100000;
+}
+
+.resize-handle-top-right {
+  top: 0;
+  right: 0;
+  width: 5px;
+  height: 5px;
+  cursor: ne-resize;
+  z-index: 100000;
+}
+
+.resize-handle-bottom-left {
+  bottom: 0;
+  left: 0;
+  width: 5px;
+  height: 5px;
+  cursor: sw-resize;
+  z-index: 100000;
+}
+
+.resize-handle-bottom-right {
+  bottom: 0;
+  right: 0;
+  width: 5px;
+  height: 5px;
+  cursor: se-resize;
+  z-index: 100000;
+}
+
+/* Critical for Electron frameless window resize */
+.resize-handle {
+  -webkit-app-region: no-drag !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
+/* Optional: Make them visible for testing */
+.resize-handle {
+  background-color: rgba(255, 0, 0, 0.3) !important; /* Red for visibility during testing */
+}
