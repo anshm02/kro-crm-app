@@ -267,7 +267,7 @@ export class LLMHelper {
         .replace(/\r/g, '\\r')    // Escape carriage returns
         .replace(/\t/g, '\\t');   // Escape tabs
 
-      const ollamaPrompt = `${this.systemPrompt}\n\nAudio transcription: "${escapedTranscription}"\n\nAs a sales agent, you have been asked a question by a client. Provide a brief suggested response for the client's question.`;
+      const ollamaPrompt = `${this.systemPrompt}\n\nAudio transcription: "${escapedTranscription}"\n\n Provide a suggestion to the users question.`;
 
       // CHANGE: Build the JSON payload as an object first, then stringify it
       const ollamaPayload = {

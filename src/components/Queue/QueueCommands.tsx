@@ -16,6 +16,13 @@ interface TranscriptEntry {
   timestamp: string
 }
 
+interface LiveTranscriptionState {
+  fullText: string
+  displayedText: string
+  currentIndex: number
+  messageId: string
+}
+
 const QueueCommands: React.FC<QueueCommandsProps> = ({
   onTooltipVisibilityChange,
   screenshots,
@@ -34,12 +41,14 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
 
   const [audioResults, setAudioResults] = useState<string[]>([])
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([])
-  const [liveTranscription, setLiveTranscription] = useState<string>("")
+  const [liveTranscription, setLiveTranscription] = useState<LiveTranscriptionState | null>(null)
   const [currentVolume, setCurrentVolume] = useState(0)
   const [messageInput, setMessageInput] = useState("")
   const [showChat, setShowChat] = useState(false)
   const chunks = useRef<Blob[]>([])
   const transcriptEndRef = useRef<HTMLDivElement>(null)
+  const animationFrameRef = useRef<number | null>(null)
+  const transcriptionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   // Audio/VAD refs
   const audioContextRef = useRef<AudioContext | null>(null)
@@ -53,7 +62,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   const noiseFloorRef = useRef<number | null>(null)
   const stopInFlightRef = useRef(false)
 
-  // NEW: session lifetime flag
+  // Session lifetime flag
   const sessionActiveRef = useRef(false)
 
   // Tunables
@@ -73,7 +82,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
       tooltipHeight = tooltipRef.current.offsetHeight + 10
     }
     onTooltipVisibilityChange(isTooltipVisible, tooltipHeight)
-  }, [isTooltipVisible])
+  }, [isTooltipVisible, onTooltipVisibilityChange])
 
   const handleMouseEnter = () => setIsTooltipVisible(true)
   const handleMouseLeave = () => setIsTooltipVisible(false)
@@ -91,35 +100,99 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
     return Math.max(0, Math.min(10, Math.round(t * 10)))
   }
 
-  // Simulate live transcription (you'd replace this with actual real-time transcription)
+  // Improved smooth live transcription animation
   const simulateLiveTranscription = (text: string) => {
-    const words = text.split(' ')
-    let currentIndex = 0
+    // Clear any existing animation
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current)
+    }
+    if (transcriptionTimeoutRef.current) {
+      clearTimeout(transcriptionTimeoutRef.current)
+    }
+
+    // Generate unique ID for this message
+    const messageId = Date.now().toString()
     
-    const interval = setInterval(() => {
-      if (currentIndex < words.length) {
-        setLiveTranscription(prev => prev + (prev ? ' ' : '') + words[currentIndex])
-        currentIndex++
-      } else {
-        clearInterval(interval)
-        // Convert live transcription to final entry
-        const timestamp = new Date().toLocaleTimeString('en-US', { 
-          hour: 'numeric', 
-          minute: '2-digit',
-          hour12: true 
-        })
-        setTranscript(prev => [...prev, {
-          type: 'answer',
-          text: liveTranscription + ' ' + words.join(' ').substring(liveTranscription.length).trim(),
-          timestamp
-        }])
-        setLiveTranscription("")
-      }
-    }, 100) // Simulate word-by-word appearance
+    // Initialize live transcription state
+    const liveState: LiveTranscriptionState = {
+      fullText: text,
+      displayedText: '',
+      currentIndex: 0,
+      messageId
+    }
+    
+    setLiveTranscription(liveState)
+
+    // Character-by-character animation with variable speed
+    const animateText = () => {
+      setLiveTranscription(prev => {
+        if (!prev || prev.messageId !== messageId) return prev
+        
+        if (prev.currentIndex >= prev.fullText.length) {
+          // Animation complete - convert to final transcript entry
+          const timestamp = new Date().toLocaleTimeString('en-US', { 
+            hour: 'numeric', 
+            minute: '2-digit',
+            hour12: true 
+          })
+          
+          // Add to transcript
+          setTranscript(current => [...current, {
+            type: 'answer',
+            text: prev.fullText,
+            timestamp
+          }])
+          
+          // Clear live transcription immediately
+          return null
+        }
+        
+        // Calculate how many characters to add (variable speed for more natural feel)
+        const remainingChars = prev.fullText.length - prev.currentIndex
+        let charsToAdd = 1
+        
+        // Speed up for longer remaining text
+        if (remainingChars > 100) charsToAdd = 3
+        else if (remainingChars > 50) charsToAdd = 2
+        
+        // Don't break words - if we're in the middle of a word, complete it
+        const nextIndex = Math.min(prev.currentIndex + charsToAdd, prev.fullText.length)
+        const nextChar = prev.fullText[nextIndex]
+        const currentChar = prev.fullText[prev.currentIndex + charsToAdd - 1]
+        
+        // If we're about to break a word, find the end of the word
+        let adjustedIndex = nextIndex
+        if (nextChar && nextChar !== ' ' && currentChar !== ' ') {
+          const spaceIndex = prev.fullText.indexOf(' ', nextIndex)
+          if (spaceIndex !== -1 && spaceIndex - nextIndex < 10) {
+            adjustedIndex = spaceIndex
+          }
+        }
+        
+        return {
+          ...prev,
+          displayedText: prev.fullText.substring(0, adjustedIndex),
+          currentIndex: adjustedIndex
+        }
+      })
+      
+      // Variable delay for more natural typing effect
+      const delay = Math.random() * 20 + 15 // 15-35ms
+      animationFrameRef.current = requestAnimationFrame(() => {
+        transcriptionTimeoutRef.current = setTimeout(animateText, delay)
+      })
+    }
+    
+    // Start animation
+    animateText()
   }
 
   const sendAudioForAnalysis = async () => {
     if (chunks.current.length === 0) return
+    
+    // Clear any existing live transcription
+    setLiveTranscription(null)
+    
     const audioBlob = new Blob(chunks.current, { type: "audio/webm" })
     console.log("[VAD] Sending audio, size:", audioBlob.size)
 
@@ -134,7 +207,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
         if (result?.text && result.text.trim()) {
           setAudioResults(prev => [...prev, result.text])
           
-          // Add to transcript as an answer and simulate live transcription
+          // Add smooth animation for the response
           simulateLiveTranscription(result.text)
         }
       } catch (err) {
@@ -173,11 +246,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
       if (rms > threshold) {
         isSpeakingRef.current = true
         silenceStartRef.current = null
-        
-        // Show live indicator when speaking
-        if (!liveTranscription) {
-          setLiveTranscription("🎤 Listening...")
-        }
+        // Don't show "Listening..." text - only show actual transcriptions
       } else {
         if (isSpeakingRef.current) {
           if (silenceStartRef.current == null) {
@@ -315,7 +384,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
     stopInFlightRef.current = false
     isSpeakingRef.current = false
     silenceStartRef.current = null
-    setLiveTranscription("")
+    setLiveTranscription(null)
   }
 
   const handleRecordClick = async () => {
@@ -323,7 +392,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
       setIsRecording(true)
       setAudioResults([])
       setTranscript([])
-      setLiveTranscription("")
+      setLiveTranscription(null)
       await startRecording()
     } else {
       setIsRecording(false)
@@ -368,6 +437,12 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   useEffect(() => {
     return () => {
       if (isRecording) stopRecording()
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current)
+      }
+      if (transcriptionTimeoutRef.current) {
+        clearTimeout(transcriptionTimeoutRef.current)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -476,9 +551,14 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                 <div className="flex justify-start">
                   <div className="max-w-2xl">
                     <div className="rounded-2xl px-4 py-3 bg-gradient-to-r from-orange-500/15 to-yellow-500/15 backdrop-blur-md text-orange-200 border border-orange-500/20 shadow-xl">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse" />
-                        <p className="text-sm leading-relaxed">{liveTranscription}</p>
+                      <div className="flex items-start gap-2">
+                        <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse mt-1.5 flex-shrink-0" />
+                        <p className="text-sm leading-relaxed">
+                          {liveTranscription.displayedText}
+                          {liveTranscription.currentIndex < liveTranscription.fullText.length && (
+                            <span className="inline-block w-0.5 h-4 bg-orange-400 animate-pulse ml-0.5" />
+                          )}
+                        </p>
                       </div>
                     </div>
                   </div>
