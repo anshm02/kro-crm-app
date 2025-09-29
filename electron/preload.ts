@@ -74,6 +74,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
       ipcRenderer.removeListener("screenshot-taken", subscription)
     }
   },
+
+  getDeepgramApiKey: () => ipcRenderer.invoke('get-deepgram-api-key'),
+
   onSolutionsReady: (callback: (solutions: string) => void) => {
     const subscription = (_: any, solutions: string) => callback(solutions)
     ipcRenderer.on("solutions-ready", subscription)

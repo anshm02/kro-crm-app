@@ -62,6 +62,13 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   const noiseFloorRef = useRef<number | null>(null)
   const stopInFlightRef = useRef(false)
 
+  // Deepgram refs
+  const deepgramSocketRef = useRef<WebSocket | null>(null)
+  const deepgramProcessorRef = useRef<ScriptProcessorNode | null>(null)
+  const [deepgramLiveText, setDeepgramLiveText] = useState("")
+  const deepgramFinalTextRef = useRef("")
+  const deepgramInterimTextRef = useRef("")
+
   // Session lifetime flag
   const sessionActiveRef = useRef(false)
 
@@ -74,7 +81,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
   // Auto-scroll to bottom when new entries are added
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [transcript, liveTranscription])
+  }, [transcript, liveTranscription, deepgramLiveText])
 
   useEffect(() => {
     let tooltipHeight = 0
@@ -98,6 +105,152 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
     const minDb = -90, maxDb = -20
     const t = Math.min(1, Math.max(0, (db - minDb) / (maxDb - minDb)))
     return Math.max(0, Math.min(10, Math.round(t * 10)))
+  }
+
+  // Initialize Deepgram WebSocket connection
+  const initializeDeepgram = async () => {
+    console.log("[Deepgram] Starting initialization...")
+    try {
+      // Try to get API key from Electron backend, fallback to hardcoded for testing
+      let apiKey;
+      try {
+        apiKey = await window.electronAPI.invoke('get-deepgram-api-key')
+        console.log("[Deepgram] Got API key from backend")
+      } catch (e) {
+        console.warn("[Deepgram] Could not get API key from backend, using fallback")
+        // TEMPORARY: Replace with your actual Deepgram API key for testing
+        // Get your key from https://console.deepgram.com/
+        apiKey = '318dc352c08f695131a75753cf59d05eeb50de98' // <-- REPLACE THIS
+      }
+      
+      // if (!apiKey || apiKey === '318dc352c08f695131a75753cf59d05eeb50de98') {
+      //   console.error("[Deepgram] No valid API key available - live transcription disabled")
+      //   return false
+      // }
+
+      console.log("[Deepgram] API key obtained, creating WebSocket...")
+
+      // Close existing connection if any
+      if (deepgramSocketRef.current) {
+        deepgramSocketRef.current.close()
+      }
+
+      // Create WebSocket connection to Deepgram with options
+      const socket = new WebSocket(
+        'wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&language=en-US&model=nova-2&smart_format=true&interim_results=true&utterance_end_ms=1000&vad_events=true',
+        ['token', apiKey]
+      )
+
+      socket.onopen = () => {
+        console.log("[Deepgram] ✅ WebSocket connected successfully")
+        deepgramFinalTextRef.current = ""
+        deepgramInterimTextRef.current = ""
+      }
+
+      socket.onmessage = (message) => {
+        const received = JSON.parse(message.data)
+        
+        // Only log non-empty transcripts and important events
+        if (received.type === 'Results' && received.channel?.alternatives?.[0]?.transcript) {
+          console.log("[Deepgram] Transcript received:", received.channel.alternatives[0].transcript, 
+                      "| Final:", received.is_final)
+        }
+        
+        // Handle different message types
+        if (received.type === 'Results') {
+          const transcript = received.channel?.alternatives?.[0]?.transcript || ''
+          
+          if (transcript && transcript.trim() !== '') {
+            if (received.is_final) {
+              console.log("[Deepgram] ✅ Final:", transcript)
+              deepgramFinalTextRef.current += transcript + " "
+              setDeepgramLiveText(deepgramFinalTextRef.current.trim())
+            } else {
+              console.log("[Deepgram] 📝 Interim:", transcript)
+              deepgramInterimTextRef.current = transcript
+              setDeepgramLiveText((deepgramFinalTextRef.current + " " + deepgramInterimTextRef.current).trim())
+            }
+          }
+        } else if (received.type === 'SpeechStarted') {
+          console.log("[Deepgram] 🎤 Speech started")
+        }
+      }
+
+      socket.onerror = (error) => {
+        console.error("[Deepgram] ❌ WebSocket error:", error)
+      }
+
+      socket.onclose = (event) => {
+        console.log("[Deepgram] WebSocket closed - Code:", event.code, "Reason:", event.reason)
+      }
+
+      deepgramSocketRef.current = socket
+      return true
+    } catch (error) {
+      console.error("[Deepgram] ❌ Failed to initialize:", error)
+      return false
+    }
+  }
+
+  // Setup audio processor for Deepgram
+  const setupDeepgramProcessor = (audioContext: AudioContext, source: MediaStreamAudioSourceNode) => {
+    console.log("[Deepgram] Setting up audio processor...")
+    
+    // Create processor with smaller buffer for lower latency
+    const bufferSize = 2048 // Smaller buffer = lower latency
+    const processor = audioContext.createScriptProcessor(bufferSize, 1, 1)
+    let audioSentCount = 0
+    
+    processor.onaudioprocess = (e) => {
+      if (!deepgramSocketRef.current || deepgramSocketRef.current.readyState !== WebSocket.OPEN) {
+        if (audioSentCount === 0) {
+          console.warn("[Deepgram] WebSocket not ready, audio not being sent")
+        }
+        return
+      }
+
+      const inputData = e.inputBuffer.getChannelData(0)
+      
+      // Downsample to 16kHz if needed (Deepgram expects 16kHz)
+      const targetSampleRate = 16000
+      const sourceSampleRate = audioContext.sampleRate
+      const downsampleRatio = sourceSampleRate / targetSampleRate
+      
+      let outputData
+      if (Math.abs(downsampleRatio - 1) > 0.01) {
+        // Need to downsample
+        const outputLength = Math.floor(inputData.length / downsampleRatio)
+        const downsampled = new Float32Array(outputLength)
+        for (let i = 0; i < outputLength; i++) {
+          const sourceIndex = Math.floor(i * downsampleRatio)
+          downsampled[i] = inputData[sourceIndex]
+        }
+        outputData = downsampled
+      } else {
+        outputData = inputData
+      }
+      
+      // Convert float32 to int16 PCM
+      const int16Data = new Int16Array(outputData.length)
+      for (let i = 0; i < outputData.length; i++) {
+        const s = Math.max(-1, Math.min(1, outputData[i]))
+        int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
+      }
+
+      // Send to Deepgram
+      deepgramSocketRef.current.send(int16Data.buffer)
+      
+      // Log periodically to confirm audio is being sent
+      audioSentCount++
+      if (audioSentCount % 100 === 0) {
+        console.log(`[Deepgram] Audio chunks sent: ${audioSentCount} (sample rate: ${sourceSampleRate}→16kHz)`)
+      }
+    }
+
+    source.connect(processor)
+    processor.connect(audioContext.destination)
+    deepgramProcessorRef.current = processor
+    console.log("[Deepgram] ✅ Audio processor setup complete")
   }
 
   // Improved smooth live transcription animation
@@ -193,6 +346,25 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
     // Clear any existing live transcription
     setLiveTranscription(null)
     
+    // Save the final Deepgram transcription if any
+    if (deepgramLiveText.trim()) {
+      const timestamp = new Date().toLocaleTimeString('en-US', { 
+        hour: 'numeric', 
+        minute: '2-digit',
+        hour12: true 
+      })
+      setTranscript(prev => [...prev, {
+        type: 'question',
+        text: deepgramLiveText.trim(),
+        timestamp
+      }])
+    }
+    
+    // Clear Deepgram text
+    setDeepgramLiveText("")
+    deepgramFinalTextRef.current = ""
+    deepgramInterimTextRef.current = ""
+    
     const audioBlob = new Blob(chunks.current, { type: "audio/webm" })
     console.log("[VAD] Sending audio, size:", audioBlob.size)
 
@@ -246,7 +418,6 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
       if (rms > threshold) {
         isSpeakingRef.current = true
         silenceStartRef.current = null
-        // Don't show "Listening..." text - only show actual transcriptions
       } else {
         if (isSpeakingRef.current) {
           if (silenceStartRef.current == null) {
@@ -319,12 +490,14 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       })
       streamRef.current = stream
+      console.log("[VAD] Microphone access granted")
 
       audioContextRef.current = new (window.AudioContext ||
         (window as any).webkitAudioContext)()
       if (audioContextRef.current.state === "suspended") {
         await audioContextRef.current.resume()
       }
+      console.log("[VAD] AudioContext created, state:", audioContextRef.current.state)
 
       const ac = audioContextRef.current
       const analyser = ac.createAnalyser()
@@ -333,6 +506,24 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
 
       analyserRef.current = analyser
       sourceRef.current = source
+
+      // Initialize Deepgram connection and processor
+      console.log("[Deepgram] Attempting to initialize...")
+      const deepgramInitialized = await initializeDeepgram()
+      if (deepgramInitialized && deepgramSocketRef.current) {
+        console.log("[Deepgram] Waiting for socket to be ready...")
+        // Wait a moment for socket to be fully ready
+        setTimeout(() => {
+          if (deepgramSocketRef.current?.readyState === WebSocket.OPEN) {
+            console.log("[Deepgram] Socket is OPEN, setting up processor")
+            setupDeepgramProcessor(ac, source)
+          } else {
+            console.warn("[Deepgram] Socket state:", deepgramSocketRef.current?.readyState, "(0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)")
+          }
+        }, 500)
+      } else {
+        console.warn("[Deepgram] Initialization failed - continuing without live transcription")
+      }
 
       stopInFlightRef.current = false
       chunks.current = []
@@ -345,7 +536,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
       startMeterLoop(performance.now())
 
       sessionActiveRef.current = true
-      console.log("[VAD] Recording started")
+      console.log("[VAD] Recording started successfully")
     } catch (err: any) {
       console.error("[VAD] Could not start recording:", err)
       setAudioResults(prev => [...prev, `Microphone error: ${err.message}`])
@@ -354,6 +545,18 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
 
   const stopRecording = () => {
     sessionActiveRef.current = false
+
+    // Close Deepgram connection
+    if (deepgramSocketRef.current) {
+      deepgramSocketRef.current.close()
+      deepgramSocketRef.current = null
+    }
+
+    // Disconnect Deepgram processor
+    if (deepgramProcessorRef.current) {
+      deepgramProcessorRef.current.disconnect()
+      deepgramProcessorRef.current = null
+    }
 
     if (meterRafRef.current != null) {
       cancelAnimationFrame(meterRafRef.current)
@@ -385,6 +588,9 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
     isSpeakingRef.current = false
     silenceStartRef.current = null
     setLiveTranscription(null)
+    setDeepgramLiveText("")
+    deepgramFinalTextRef.current = ""
+    deepgramInterimTextRef.current = ""
   }
 
   const handleRecordClick = async () => {
@@ -393,6 +599,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
       setAudioResults([])
       setTranscript([])
       setLiveTranscription(null)
+      setDeepgramLiveText("")
       await startRecording()
     } else {
       setIsRecording(false)
@@ -442,6 +649,9 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
       }
       if (transcriptionTimeoutRef.current) {
         clearTimeout(transcriptionTimeoutRef.current)
+      }
+      if (deepgramSocketRef.current) {
+        deepgramSocketRef.current.close()
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -546,7 +756,26 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
                 </div>
               ))}
 
-              {/* Live Transcription */}
+              {/* Deepgram Live Transcription */}
+              {deepgramLiveText && (
+                <div className="flex justify-end">
+                  <div className="max-w-2xl order-2">
+                    <div className="rounded-2xl px-4 py-3 bg-gradient-to-r from-blue-600/30 to-cyan-600/30 backdrop-blur-md text-cyan-200 border border-cyan-500/20 shadow-xl">
+                      <div className="flex items-start gap-2">
+                        <p className="text-sm leading-relaxed">
+                          {deepgramLiveText}
+                          <span className="inline-block w-0.5 h-4 bg-cyan-400 animate-pulse ml-0.5" />
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1 px-2">
+                      <span className="text-[10px] text-gray-500">Live transcription</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Live Transcription (AI Response) */}
               {liveTranscription && (
                 <div className="flex justify-start">
                   <div className="max-w-2xl">
@@ -633,7 +862,7 @@ const QueueCommands: React.FC<QueueCommandsProps> = ({
               {isRecording && (
                 <div className="mt-3 flex items-center justify-center gap-2">
                   <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                  <span className="text-xs text-gray-400">Recording... VAD will auto-send after 1.5s of silence</span>
+                  <span className="text-xs text-gray-400">Recording... Live transcription active • VAD will auto-send after 1.5s of silence</span>
                 </div>
               )}
             </div>
