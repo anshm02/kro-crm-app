@@ -2,7 +2,8 @@
 
 KRO is an AI-powered CRM assistant designed to help sales teams manage client relationships, track deals, and boost efficiency. It integrates voice, AI, and CRM workflows into a single lightweight app.
 
-<img width="697" height="798" alt="Screenshot 2025-10-02 at 6 16 13 PM" src="https://github.com/user-attachments/assets/eb30eb32-a8e4-479d-bdbd-1247eaa24602" />
+<img width="400" height="600" alt="Screenshot 2025-10-02 at 6 17 51 PM" src="https://github.com/user-attachments/assets/fba57847-1467-447f-a5ab-08252723971d" />
+
 
 ---
 
