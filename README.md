@@ -1,92 +1,111 @@
-# Free Cluely
+# KRO CRM Assistant
 
-The first free open source version of [Cluely](https://cluely.com) - The invisible cheating desktop app that gives you the answers you didn't study for
+KRO is an AI-powered CRM assistant designed to help sales teams manage client relationships, track deals, and boost efficiency. It integrates voice, AI, and CRM workflows into a single lightweight app.
 
-# Sponsored by Recall AI - API for desktop recording
-If you’re looking for a hosted desktop recording API, consider checking out [Recall.ai](https://www.recall.ai/product/desktop-recording-sdk?utm_source=github&utm_medium=sponsorship&utm_campaign=prat011-free-cluely), an API that records Zoom, Google Meet, Microsoft Teams, in-person meetings, and more.
+---
 
 ## 🚀 Quick Start Guide
 
 ### Prerequisites
-- Make sure you have Node.js installed on your computer
+
+- Node.js installed on your computer
 - Git installed on your computer
-- A Gemini API key (get it from [Google AI Studio](https://makersuite.google.com/app/apikey))
+- An API key for your preferred LLM provider (e.g., Gemini, OpenAI, or other supported APIs)
+
+---
 
 ### Installation Steps
 
-1. Clone the repository:
+#### 1. Clone the repository
+
 ```bash
 git clone [repository-url]
-cd free-cluely
+cd kro-crm
 ```
 
-2. Install dependencies:
+#### 2. Install dependencies
+
 ```bash
 npm install
 ```
 
-3. Set up environment variables:
-   - Create a file named `.env` in the root folder
-   - Add your Gemini API key:
-   ```
-   GEMINI_API_KEY=your_api_key_here
-   ```
-   - Save the file
+#### 3. Set up environment variables
 
-### Running the App
+- Create a file named `.env` in the root folder
+- Add your API key (example with Gemini):
 
-#### Method 1: Development Mode (Recommended for first run)
-1. Open a terminal and run:
+```ini
+GEMINI_API_KEY=your_api_key_here
+```
+
+- Save the file
+
+---
+
+## Running the App
+
+### Method 1: Development Mode (Recommended for first run)
+
+1. **Start the frontend:**
+
 ```bash
 npm run dev -- --port 5180
 ```
 
-2. Open another terminal in the same folder and run:
+2. **In another terminal, start the desktop app:**
+
 ```bash
 NODE_ENV=development npm run electron:dev
 ```
 
-#### Method 2: Production Mode
+### Method 2: Production Build
+
 ```bash
 npm run build
 ```
-The built app will be in the `release` folder.
 
-### ⚠️ Important Notes
+The built app will be located in the `release` folder.
 
-1. **Closing the App**: 
-   - Press `Cmd + Q` (Mac) or `Ctrl + Q` (Windows/Linux) to quit
-   - Or use Activity Monitor/Task Manager to close `Interview Coder`
-   - The X button currently doesn't work (known issue)
+---
 
-2. **If the app doesn't start**:
-   - Make sure no other app is using port 5180
-   - Try killing existing processes:
-     ```bash
-     # Find processes using port 5180
-     lsof -i :5180
-     # Kill them (replace [PID] with the process ID)
-     kill [PID]
-     ```
+## ⚠️ Important Notes
 
-3. **Keyboard Shortcuts**:
-   - `Cmd/Ctrl + B`: Toggle window visibility
-   - `Cmd/Ctrl + H`: Take screenshot
-   - 'Cmd/Enter': Get solution
-   - `Cmd/Ctrl + Arrow Keys`: Move window
+### Closing the App
 
-### Troubleshooting
+- Use **Cmd + Q** (Mac) or **Ctrl + Q** (Windows/Linux) to quit
+- Or close the process via Activity Monitor/Task Manager
+- **Note:** The X button currently does not fully quit the app (known issue)
 
-Note: Working to add proper support to windows and ubuntu
+### If the app doesn't start
 
-If you see errors:
+Ensure no other app is using port 5180. Kill any conflicting processes:
+
+```bash
+lsof -i :5180
+kill [PID]
+```
+
+---
+
+## Keyboard Shortcuts (customizable)
+
+- **Cmd/Ctrl + B:** Toggle app visibility
+- **Cmd/Ctrl + H:** Capture meeting notes/screenshot
+- **Cmd/Enter:** Trigger AI assistant
+- **Cmd/Ctrl + Arrow Keys:** Move window
+
+---
+
+## Troubleshooting
+
+If you run into errors:
+
 1. Delete the `node_modules` folder
 2. Delete `package-lock.json`
-3. Run `npm install` again
-4. Try running the app again using Method 1
+3. Reinstall dependencies:
 
-## Contribution
+```bash
+npm install
+```
 
-I'm unable to maintain this repo actively because I do not have the time for it. Please do not create issues, if you have any PRs feel free to create them and i'll review and merge it.
-
-If you are looking to integrate this for your company, i can work with you to create custom solution. Reach out on [twitter](https://x.com/prathitjoshi_)
+4. Run again in development mode
