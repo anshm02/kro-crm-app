@@ -137,4 +137,9 @@ export function initializeIpcHandlers(appState: AppState): void {
   ipcMain.handle("center-and-show-window", async () => {
     appState.centerAndShowWindow()
   })
+
+  // Add this to your IPC handlers
+  ipcMain.handle('get-deepgram-api-key', async () => {
+    return process.env.DEEPGRAM_API_KEY || '318dc352c08f695131a75753cf59d05eeb50de98';
+  });
 }
