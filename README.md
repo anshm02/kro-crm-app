@@ -112,3 +112,12 @@ npm install
 ```
 
 4. Run again in development mode
+   
+---
+
+## Attribution & Project Origin
+
+This project was originally **forked from the open-source project [Free Cluely](https://github.com/Prat011/free-cluely)** by [**@Prat011**](https://github.com/Prat011).
+
+KRO CRM Assistant builds upon its foundation to integrate **voice-AI workflows**, **CRM automation**, and **real-time productivity tools** tailored for sales teams.
+
